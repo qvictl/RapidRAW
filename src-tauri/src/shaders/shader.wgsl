@@ -1410,28 +1410,6 @@ fn apply_halation(
     return contrast_reduced + halation_glow * amount * 2.5;
 }
 
-fn apply_unified_adjustments(
-    initial_rgb: vec3<f32>,
-    p_state: GlobalAdjustments,
-    coords_i: vec2<i32>,
-    id: vec2<u32>,
-    scale: f32,
-    tonal_blurred: vec3<f32>,
-    structure_blurred: vec3<f32>,
-    is_raw: u32
-) -> vec3<f32> {
-    var processed_rgb = apply_dehaze(initial_rgb, structure_blurred, is_raw, p_state.dehaze);
-    processed_rgb = apply_centre_tonal_and_color(processed_rgb, p_state.centre, coords_i);
-    processed_rgb = apply_white_balance(processed_rgb, p_state.temperature, p_state.tint);
-    processed_rgb = apply_filmic_exposure(processed_rgb, p_state.brightness);
-    processed_rgb = apply_tonal_adjustments(processed_rgb, tonal_blurred, is_raw, p_state.contrast, p_state.shadows, p_state.whites, p_state.blacks);
-    processed_rgb = apply_highlights_adjustment(processed_rgb, tonal_blurred, is_raw, p_state.highlights);
-    processed_rgb = apply_color_calibration(processed_rgb, p_state.color_calibration);
-    processed_rgb = apply_hsl_panel(processed_rgb, p_state.hsl, coords_i);
-    processed_rgb = apply_creative_color(processed_rgb, p_state.saturation, p_state.vibrance);    
-    return processed_rgb;
-}
-
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let out_dims = vec2<u32>(textureDimensions(output_texture));
@@ -1454,54 +1432,92 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let original_alpha = textureLoad(input_texture, absolute_coord, 0).a;
 
     var initial_linear_rgb: vec3<f32>;
-    if (adjustments.global.is_raw_image == 0u) {
+    let is_raw = adjustments.global.is_raw_image;
+    if (is_raw == 0u) {
         initial_linear_rgb = srgb_to_linear(color_from_texture);
     } else {
         initial_linear_rgb = color_from_texture;
     }
 
-    var p_state = adjustments.global;
+    var t_exposure = adjustments.global.exposure;
+    var t_brightness = adjustments.global.brightness;
+    var t_contrast = adjustments.global.contrast;
+    var t_highlights = adjustments.global.highlights;
+    var t_shadows = adjustments.global.shadows;
+    var t_whites = adjustments.global.whites;
+    var t_blacks = adjustments.global.blacks;
+    var t_saturation = adjustments.global.saturation;
+    var t_temperature = adjustments.global.temperature;
+    var t_tint = adjustments.global.tint;
+    var t_vibrance = adjustments.global.vibrance;
+    var t_luma_nr = adjustments.global.luma_noise_reduction;
+    var t_color_nr = adjustments.global.color_noise_reduction;
+    var t_clarity = adjustments.global.clarity;
+    var t_dehaze = adjustments.global.dehaze;
+    var t_structure = adjustments.global.structure;
+    var t_glow = adjustments.global.glow_amount;
+    var t_halation = adjustments.global.halation_amount;
+    var t_flare = adjustments.global.flare_amount;
+    var t_sharpness = adjustments.global.sharpness;
+
+    var h0_h = adjustments.global.hsl[0].hue; var h0_s = adjustments.global.hsl[0].saturation; var h0_l = adjustments.global.hsl[0].luminance;
+    var h1_h = adjustments.global.hsl[1].hue; var h1_s = adjustments.global.hsl[1].saturation; var h1_l = adjustments.global.hsl[1].luminance;
+    var h2_h = adjustments.global.hsl[2].hue; var h2_s = adjustments.global.hsl[2].saturation; var h2_l = adjustments.global.hsl[2].luminance;
+    var h3_h = adjustments.global.hsl[3].hue; var h3_s = adjustments.global.hsl[3].saturation; var h3_l = adjustments.global.hsl[3].luminance;
+    var h4_h = adjustments.global.hsl[4].hue; var h4_s = adjustments.global.hsl[4].saturation; var h4_l = adjustments.global.hsl[4].luminance;
+    var h5_h = adjustments.global.hsl[5].hue; var h5_s = adjustments.global.hsl[5].saturation; var h5_l = adjustments.global.hsl[5].luminance;
+    var h6_h = adjustments.global.hsl[6].hue; var h6_s = adjustments.global.hsl[6].saturation; var h6_l = adjustments.global.hsl[6].luminance;
+    var h7_h = adjustments.global.hsl[7].hue; var h7_s = adjustments.global.hsl[7].saturation; var h7_l = adjustments.global.hsl[7].luminance;
 
     for (var i = 0u; i < adjustments.mask_count; i = i + 1u) {
         let influence = get_mask_influence(i, absolute_coord);
         if (influence > 0.001) {
             let m = adjustments.mask_adjustments[i];
-            
-            p_state.exposure += m.exposure * influence;
-            p_state.brightness += m.brightness * influence;
-            p_state.contrast += m.contrast * influence;
-            p_state.highlights += m.highlights * influence;
-            p_state.shadows += m.shadows * influence;
-            p_state.whites += m.whites * influence;
-            p_state.blacks += m.blacks * influence;
-            
-            p_state.saturation += m.saturation * influence;
-            p_state.temperature += m.temperature * influence;
-            p_state.tint += m.tint * influence;
-            p_state.vibrance += m.vibrance * influence;
 
-            p_state.luma_noise_reduction += m.luma_noise_reduction * influence;
-            p_state.color_noise_reduction += m.color_noise_reduction * influence;
-            p_state.clarity += m.clarity * influence;
-            p_state.dehaze += m.dehaze * influence;
-            p_state.structure += m.structure * influence;
-            
-            p_state.glow_amount += m.glow_amount * influence;
-            p_state.halation_amount += m.halation_amount * influence;
-            p_state.flare_amount += m.flare_amount * influence;
+            t_exposure += m.exposure * influence;
+            t_brightness += m.brightness * influence;
+            t_contrast += m.contrast * influence;
+            t_highlights += m.highlights * influence;
+            t_shadows += m.shadows * influence;
+            t_whites += m.whites * influence;
+            t_blacks += m.blacks * influence;
 
-            for (var j = 0u; j < 8u; j = j + 1u) {
-                p_state.hsl[j].hue += m.hsl[j].hue * influence;
-                p_state.hsl[j].saturation += m.hsl[j].saturation * influence;
-                p_state.hsl[j].luminance += m.hsl[j].luminance * influence;
-            }
+            t_saturation += m.saturation * influence;
+            t_temperature += m.temperature * influence;
+            t_tint += m.tint * influence;
+            t_vibrance += m.vibrance * influence;
+
+            t_luma_nr += m.luma_noise_reduction * influence;
+            t_color_nr += m.color_noise_reduction * influence;
+            t_clarity += m.clarity * influence;
+            t_dehaze += m.dehaze * influence;
+            t_structure += m.structure * influence;
+
+            t_glow += m.glow_amount * influence;
+            t_halation += m.halation_amount * influence;
+            t_flare += m.flare_amount * influence;
+
+            h0_h += m.hsl[0].hue * influence; h0_s += m.hsl[0].saturation * influence; h0_l += m.hsl[0].luminance * influence;
+            h1_h += m.hsl[1].hue * influence; h1_s += m.hsl[1].saturation * influence; h1_l += m.hsl[1].luminance * influence;
+            h2_h += m.hsl[2].hue * influence; h2_s += m.hsl[2].saturation * influence; h2_l += m.hsl[2].luminance * influence;
+            h3_h += m.hsl[3].hue * influence; h3_s += m.hsl[3].saturation * influence; h3_l += m.hsl[3].luminance * influence;
+            h4_h += m.hsl[4].hue * influence; h4_s += m.hsl[4].saturation * influence; h4_l += m.hsl[4].luminance * influence;
+            h5_h += m.hsl[5].hue * influence; h5_s += m.hsl[5].saturation * influence; h5_l += m.hsl[5].luminance * influence;
+            h6_h += m.hsl[6].hue * influence; h6_s += m.hsl[6].saturation * influence; h6_l += m.hsl[6].luminance * influence;
+            h7_h += m.hsl[7].hue * influence; h7_s += m.hsl[7].saturation * influence; h7_l += m.hsl[7].luminance * influence;
         }
     }
 
+    let final_hsl = array<HslColor, 8>(
+        HslColor(h0_h, h0_s, h0_l, 0.0), HslColor(h1_h, h1_s, h1_l, 0.0),
+        HslColor(h2_h, h2_s, h2_l, 0.0), HslColor(h3_h, h3_s, h3_l, 0.0),
+        HslColor(h4_h, h4_s, h4_l, 0.0), HslColor(h5_h, h5_s, h5_l, 0.0),
+        HslColor(h6_h, h6_s, h6_l, 0.0), HslColor(h7_h, h7_s, h7_l, 0.0)
+    );
+
     initial_linear_rgb = apply_noise_reduction(
         initial_linear_rgb, absolute_coord_i,
-        p_state.luma_noise_reduction, p_state.color_noise_reduction,
-        scale, p_state.is_raw_image
+        t_luma_nr, t_color_nr, scale, is_raw
     );
 
     let sharpness_blurred = textureLoad(sharpness_blur_texture, id.xy, 0).rgb;
@@ -1512,8 +1528,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     var locally_contrasted_rgb = initial_linear_rgb;
 
     locally_contrasted_rgb = apply_local_contrast(
-        locally_contrasted_rgb, sharpness_blurred, 
-        p_state.sharpness, p_state.is_raw_image, 0u, p_state.sharpness_threshold
+        locally_contrasted_rgb, sharpness_blurred,
+        t_sharpness, is_raw, 0u, adjustments.global.sharpness_threshold
     );
 
     var sharpness_delta = vec3<f32>(0.0);
@@ -1523,35 +1539,34 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             let m = adjustments.mask_adjustments[i];
             if (abs(m.sharpness) > 0.001) {
                 let local_sharp_result = apply_local_contrast(
-                    initial_linear_rgb, sharpness_blurred, 
-                    m.sharpness, p_state.is_raw_image, 0u, m.sharpness_threshold
+                    initial_linear_rgb, sharpness_blurred,
+                    m.sharpness, is_raw, 0u, m.sharpness_threshold
                 );
                 sharpness_delta += (local_sharp_result - initial_linear_rgb) * influence;
             }
         }
     }
-
     locally_contrasted_rgb += sharpness_delta;
 
-    locally_contrasted_rgb = apply_local_contrast(locally_contrasted_rgb, clarity_blurred, p_state.clarity, p_state.is_raw_image, 1u, 0.0);
-    locally_contrasted_rgb = apply_local_contrast(locally_contrasted_rgb, structure_blurred, p_state.structure, p_state.is_raw_image, 1u, 0.0);
-    locally_contrasted_rgb = apply_centre_local_contrast(locally_contrasted_rgb, p_state.centre, absolute_coord_i, clarity_blurred, p_state.is_raw_image);
+    locally_contrasted_rgb = apply_local_contrast(locally_contrasted_rgb, clarity_blurred, t_clarity, is_raw, 1u, 0.0);
+    locally_contrasted_rgb = apply_local_contrast(locally_contrasted_rgb, structure_blurred, t_structure, is_raw, 1u, 0.0);
+    locally_contrasted_rgb = apply_centre_local_contrast(locally_contrasted_rgb, adjustments.global.centre, absolute_coord_i, clarity_blurred, is_raw);
 
-    var processed_rgb = apply_linear_exposure(locally_contrasted_rgb, p_state.exposure);
+    var processed_rgb = apply_linear_exposure(locally_contrasted_rgb, t_exposure);
 
-    if (p_state.glow_amount > 0.0) {
+    if (t_glow > 0.0) {
         processed_rgb = apply_glow_bloom(
-            processed_rgb, structure_blurred, p_state.glow_amount, p_state.is_raw_image,
-            p_state.exposure, p_state.brightness, p_state.contrast, p_state.whites
+            processed_rgb, structure_blurred, t_glow, is_raw,
+            t_exposure, t_brightness, t_contrast, t_whites
         );
     }
-    if (p_state.halation_amount > 0.0) {
+    if (t_halation > 0.0) {
         processed_rgb = apply_halation(
-            processed_rgb, clarity_blurred, p_state.halation_amount, p_state.is_raw_image,
-            p_state.exposure, p_state.brightness, p_state.contrast, p_state.whites
+            processed_rgb, clarity_blurred, t_halation, is_raw,
+            t_exposure, t_brightness, t_contrast, t_whites
         );
     }
-    if (p_state.flare_amount > 0.0) {
+    if (t_flare > 0.0) {
         let uv = vec2<f32>(absolute_coord) / full_dims;
         var flare_color = textureSampleLevel(flare_texture, flare_sampler, uv, 0.0).rgb;
         flare_color *= 1.4;
@@ -1564,19 +1579,18 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             perceptual_luma = 1.0 + pow(linear_luma - 1.0, 1.0 / 2.2);
         }
         let protection = 1.0 - smoothstep(0.7, 1.8, perceptual_luma);
-        processed_rgb += flare_color * p_state.flare_amount * protection;
+        processed_rgb += flare_color * t_flare * protection;
     }
 
-    var composite_rgb_linear = apply_unified_adjustments(
-        processed_rgb,
-        p_state,
-        absolute_coord_i,
-        id.xy,
-        scale,
-        tonal_blurred,
-        structure_blurred,
-        p_state.is_raw_image
-    );
+    var composite_rgb_linear = apply_dehaze(processed_rgb, structure_blurred, is_raw, t_dehaze);
+    composite_rgb_linear = apply_centre_tonal_and_color(composite_rgb_linear, adjustments.global.centre, absolute_coord_i);
+    composite_rgb_linear = apply_white_balance(composite_rgb_linear, t_temperature, t_tint);
+    composite_rgb_linear = apply_filmic_exposure(composite_rgb_linear, t_brightness);
+    composite_rgb_linear = apply_tonal_adjustments(composite_rgb_linear, tonal_blurred, is_raw, t_contrast, t_shadows, t_whites, t_blacks);
+    composite_rgb_linear = apply_highlights_adjustment(composite_rgb_linear, tonal_blurred, is_raw, t_highlights);
+    composite_rgb_linear = apply_color_calibration(composite_rgb_linear, adjustments.global.color_calibration);
+    composite_rgb_linear = apply_hsl_panel(composite_rgb_linear, final_hsl, absolute_coord_i);
+    composite_rgb_linear = apply_creative_color(composite_rgb_linear, t_saturation, t_vibrance);
 
     composite_rgb_linear = apply_color_grading(
         composite_rgb_linear,
@@ -1600,13 +1614,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         }
     }
 
-    if (p_state.vignette_amount != 0.0) {
+    if (adjustments.global.vignette_amount != 0.0) {
         let full_dims_f = vec2<f32>(textureDimensions(input_texture));
         let coord_f = vec2<f32>(absolute_coord);
-        let v_amount = p_state.vignette_amount;
-        let v_mid = p_state.vignette_midpoint;
-        let v_round = 1.0 - p_state.vignette_roundness;
-        let v_feather = p_state.vignette_feather * 0.5;
+        let v_amount = adjustments.global.vignette_amount;
+        let v_mid = adjustments.global.vignette_midpoint;
+        let v_round = 1.0 - adjustments.global.vignette_roundness;
+        let v_feather = adjustments.global.vignette_feather * 0.5;
         let aspect = full_dims_f.y / full_dims_f.x;
         let uv_centered = (coord_f / full_dims_f - 0.5) * 2.0;
         let uv_round = sign(uv_centered) * pow(abs(uv_centered), vec2<f32>(v_round, v_round));
@@ -1620,9 +1634,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     var base_srgb: vec3<f32>;
-    if (p_state.tonemapper_mode == 1u) {
+    if (adjustments.global.tonemapper_mode == 1u) {
         base_srgb = agx_full_transform(composite_rgb_linear);
-    } else if (p_state.is_raw_image == 1u) {
+    } else if (is_raw == 1u) {
         var srgb_emulated = linear_to_srgb(composite_rgb_linear);
         const BRIGHTNESS_GAMMA: f32 = 1.1;
         srgb_emulated = pow(srgb_emulated, vec3<f32>(1.0 / BRIGHTNESS_GAMMA));
@@ -1643,26 +1657,27 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     for (var i = 0u; i < adjustments.mask_count; i = i + 1u) {
         let influence = get_mask_influence(i, absolute_coord);
         if (influence > 0.001) {
+            let m = adjustments.mask_adjustments[i];
             let mask_curved_srgb = apply_all_curves(final_rgb,
-                adjustments.mask_adjustments[i].luma_curve, adjustments.mask_adjustments[i].luma_curve_count,
-                adjustments.mask_adjustments[i].red_curve, adjustments.mask_adjustments[i].red_curve_count,
-                adjustments.mask_adjustments[i].green_curve, adjustments.mask_adjustments[i].green_curve_count,
-                adjustments.mask_adjustments[i].blue_curve, adjustments.mask_adjustments[i].blue_curve_count
+                m.luma_curve, m.luma_curve_count,
+                m.red_curve, m.red_curve_count,
+                m.green_curve, m.green_curve_count,
+                m.blue_curve, m.blue_curve_count
             );
             final_rgb = mix(final_rgb, mask_curved_srgb, influence);
         }
     }
 
-    if (p_state.has_lut == 1u) {
+    if (adjustments.global.has_lut == 1u) {
         let lut_color = sample_lut_tetrahedral(final_rgb);
-        final_rgb = mix(final_rgb, lut_color, p_state.lut_intensity);
+        final_rgb = mix(final_rgb, lut_color, adjustments.global.lut_intensity);
     }
 
-    if (p_state.grain_amount > 0.0) {
+    if (adjustments.global.grain_amount > 0.0) {
         let coord = vec2<f32>(absolute_coord_i);
-        let amount = p_state.grain_amount * 0.5;
-        let grain_frequency = (1.0 / max(p_state.grain_size, 0.1)) / scale;
-        let roughness = p_state.grain_roughness;
+        let amount = adjustments.global.grain_amount * 0.5;
+        let grain_frequency = (1.0 / max(adjustments.global.grain_size, 0.1)) / scale;
+        let roughness = adjustments.global.grain_roughness;
         let luma = max(0.0, get_luma(final_rgb));
         let luma_mask = smoothstep(0.0, 0.15, luma) * (1.0 - smoothstep(0.6, 1.0, luma));
         let base_coord = coord * grain_frequency;
@@ -1673,7 +1688,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         final_rgb += vec3<f32>(noise_val) * amount * luma_mask;
     }
 
-    if (p_state.show_clipping == 1u) {
+    if (adjustments.global.show_clipping == 1u) {
         let HIGHLIGHT_WARNING_COLOR = vec3<f32>(1.0, 0.0, 0.0);
         let SHADOW_WARNING_COLOR = vec3<f32>(0.0, 0.0, 1.0);
         let HIGHLIGHT_CLIP_THRESHOLD = 0.998;
