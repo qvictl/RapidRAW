@@ -1872,6 +1872,19 @@ fn get_global_adjustments_from_json(
     let tone_mapper = js_adjustments["toneMapper"].as_str().unwrap_or("basic");
     let (pipe_to_rendering, rendering_to_pipe) = calculate_agx_matrices();
 
+    let (has_lut, lut_intensity) = if is_visible("effects") {
+        (
+            if js_adjustments["lutPath"].is_string() {
+                1
+            } else {
+                0
+            },
+            js_adjustments["lutIntensity"].as_f64().unwrap_or(100.0) as f32 / 100.0,
+        )
+    } else {
+        (0, 1.0)
+    };
+
     GlobalAdjustments {
         exposure: get_val("basic", "exposure", SCALES.exposure, None),
         brightness: get_val("basic", "brightness", SCALES.brightness, None),
@@ -1900,10 +1913,10 @@ fn get_global_adjustments_from_json(
             None,
         ),
 
-        clarity: get_val("effects", "clarity", SCALES.clarity, None),
-        dehaze: get_val("effects", "dehaze", SCALES.dehaze, None),
-        structure: get_val("effects", "structure", SCALES.structure, None),
-        centré: get_val("effects", "centré", SCALES.centré, None),
+        clarity: get_val("details", "clarity", SCALES.clarity, None),
+        dehaze: get_val("details", "dehaze", SCALES.dehaze, None),
+        structure: get_val("details", "structure", SCALES.structure, None),
+        centré: get_val("details", "centré", SCALES.centré, None),
         vignette_amount: get_val("effects", "vignetteAmount", SCALES.vignette_amount, None),
         vignette_midpoint: get_val(
             "effects",
@@ -1952,12 +1965,9 @@ fn get_global_adjustments_from_json(
         is_raw_image: if is_raw { 1 } else { 0 },
         _pad_ca1: 0.0,
 
-        has_lut: if js_adjustments["lutPath"].is_string() {
-            1
-        } else {
-            0
-        },
-        lut_intensity: js_adjustments["lutIntensity"].as_f64().unwrap_or(100.0) as f32 / 100.0,
+        has_lut,
+        lut_intensity,
+
         tonemapper_mode: tonemapper_override
             .unwrap_or_else(|| if tone_mapper == "agx" { 1 } else { 0 }),
         _pad_lut2: 0.0,
@@ -2106,9 +2116,9 @@ fn get_mask_adjustments_from_json(adj: &serde_json::Value) -> MaskAdjustments {
             SCALES.color_noise_reduction,
         ),
 
-        clarity: get_val("effects", "clarity", SCALES.clarity),
-        dehaze: get_val("effects", "dehaze", SCALES.dehaze),
-        structure: get_val("effects", "structure", SCALES.structure),
+        clarity: get_val("details", "clarity", SCALES.clarity),
+        dehaze: get_val("details", "dehaze", SCALES.dehaze),
+        structure: get_val("details", "structure", SCALES.structure),
 
         glow_amount: get_val("effects", "glowAmount", SCALES.glow),
         halation_amount: get_val("effects", "halationAmount", SCALES.halation),

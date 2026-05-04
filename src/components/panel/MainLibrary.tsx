@@ -1967,23 +1967,12 @@ export default function MainLibrary({
                   <motion.img
                     key={splashImage + '-ambient'}
                     src={splashImage}
-                    initial={{ opacity: 0.2, scale: 1.2 }}
-                    animate={{
-                      opacity: [0.4, 0.8, 0.4],
-                      scale: [1.2, 1.4, 1.2],
-                    }}
-                    transition={{
-                      duration: 15,
-                      ease: 'easeInOut',
-                      repeat: Infinity,
-                    }}
-                    style={{ willChange: 'transform, opacity' }}
-                    className="absolute inset-0 w-full h-full object-cover blur-[80px] pointer-events-none"
+                    className="absolute inset-0 w-full h-full object-cover blur-3xl opacity-50 pointer-events-none"
                     aria-hidden="true"
                   />
                 )}
               </AnimatePresence>
-              <div className="absolute inset-0 bg-bg-secondary/50"></div>
+              <div className="absolute inset-0 bg-bg-secondary/60"></div>
             </div>
 
             <div className="w-full h-full flex flex-col p-8 lg:p-16 overflow-y-auto custom-scrollbar relative z-10">

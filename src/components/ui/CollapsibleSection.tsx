@@ -96,7 +96,7 @@ export default function CollapsibleSection({
                   isHovering || !isContentVisible ? 'opacity-100' : 'opacity-0 pointer-events-none',
                 )}
                 onClick={handleVisibilityClick}
-                data-tooltip={isContentVisible ? 'Preview disabled section' : 'Enable section'}
+                data-tooltip={isContentVisible ? 'Disable Section' : 'Enable Section'}
               >
                 {isContentVisible ? <Eye size={16} /> : <EyeOff size={16} />}
               </button>
