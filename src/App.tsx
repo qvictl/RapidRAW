@@ -62,37 +62,21 @@ import MasksPanel from './components/panel/right/MasksPanel';
 import BottomBar from './components/panel/BottomBar';
 import { ContextMenuProvider, useContextMenu } from './context/ContextMenuContext';
 import TaggingSubMenu from './context/TaggingSubMenu';
-import CreateFolderModal from './components/modals/CreateFolderModal';
-import RenameFolderModal from './components/modals/RenameFolderModal';
-import ConfirmModal from './components/modals/ConfirmModal';
-import ImportSettingsModal from './components/modals/ImportSettingsModal';
-import RenameFileModal from './components/modals/RenameFileModal';
-import PanoramaModal from './components/modals/PanoramaModal';
-import NegativeConversionModal from './components/modals/NegativeConversionModal';
-import DenoiseModal from './components/modals/DenoiseModal';
-import CollageModal from './components/modals/CollageModal';
-import CopyPasteSettingsModal from './components/modals/CopyPasteSettingsModal';
-import CullingModal from './components/modals/CullingModal';
 import Resizer from './components/ui/Resizer';
 import {
   Adjustments,
-  AiPatch,
   Color,
   COLOR_LABELS,
-  Coord,
   COPYABLE_ADJUSTMENT_KEYS,
   INITIAL_ADJUSTMENTS,
-  MaskContainer,
   normalizeLoadedAdjustments,
   PasteMode,
-  CopyPasteSettings,
 } from './utils/adjustments';
 import { calculateCenteredCrop } from './utils/cropUtils';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import GlobalTooltip from './components/ui/GlobalTooltip';
 import { THEMES, DEFAULT_THEME_ID, ThemeProps } from './utils/themes';
-import { SubMask } from './components/panel/right/Masks';
-import { IMPORT_TIMEOUT, Status } from './components/ui/ExportImportProperties';
+import { Status } from './components/ui/ExportImportProperties';
 import {
   AppSettings,
   FilterCriteria,
@@ -109,7 +93,6 @@ import {
   ThumbnailSize,
   ThumbnailAspectRatio,
 } from './components/ui/AppProperties';
-import HdrModal from './components/modals/HdrModal';
 import { useSettingsStore } from './store/useSettingsStore';
 import { useUIStore } from './store/useUIStore';
 import { useLibraryStore } from './store/useLibraryStore';
@@ -119,6 +102,8 @@ import { useTauriListeners } from './hooks/useTauriListeners';
 import { useShallow } from 'zustand/react/shallow';
 import { useAiMasking } from './hooks/useAiMasking';
 import { useImageProcessing } from './hooks/useImageProcessing';
+import AppModals from './components/modals/AppModals';
+import { useFileOperations } from './hooks/useFileOperations';
 
 const CLERK_PUBLISHABLE_KEY = 'pk_test_YnJpZWYtc2Vhc25haWwtMTIuY2xlcmsuYWNjb3VudHMuZGV2JA'; // local dev key
 
@@ -240,16 +225,10 @@ function App() {
     activeRightPanel,
     renderedRightPanel,
     slideDirection,
-    isCreateFolderModalOpen,
-    isRenameFolderModalOpen,
-    isRenameFileModalOpen,
     renameTargetPaths,
-    isImportModalOpen,
-    isCopyPasteSettingsModalOpen,
     importTargetFolder,
     importSourcePaths,
     folderActionTarget,
-    confirmModalState,
     panoramaModalState,
     hdrModalState,
     negativeModalState,
@@ -274,16 +253,10 @@ function App() {
       activeRightPanel: state.activeRightPanel,
       renderedRightPanel: state.renderedRightPanel,
       slideDirection: state.slideDirection,
-      isCreateFolderModalOpen: state.isCreateFolderModalOpen,
-      isRenameFolderModalOpen: state.isRenameFolderModalOpen,
-      isRenameFileModalOpen: state.isRenameFileModalOpen,
       renameTargetPaths: state.renameTargetPaths,
-      isImportModalOpen: state.isImportModalOpen,
-      isCopyPasteSettingsModalOpen: state.isCopyPasteSettingsModalOpen,
       importTargetFolder: state.importTargetFolder,
       importSourcePaths: state.importSourcePaths,
       folderActionTarget: state.folderActionTarget,
-      confirmModalState: state.confirmModalState,
       panoramaModalState: state.panoramaModalState,
       hdrModalState: state.hdrModalState,
       negativeModalState: state.negativeModalState,
@@ -348,7 +321,6 @@ function App() {
     historyIndex,
     finalPreviewUrl,
     uncroppedAdjustedPreviewUrl,
-    showOriginal,
     histogram,
     waveform,
     isWaveformVisible,
@@ -366,7 +338,6 @@ function App() {
     originalSize,
     overlayMode,
     overlayRotation,
-    transformedOriginalUrl,
     isStraightenActive,
     brushSettings,
     isGeneratingAiMask,
@@ -386,7 +357,6 @@ function App() {
       historyIndex: state.historyIndex,
       finalPreviewUrl: state.finalPreviewUrl,
       uncroppedAdjustedPreviewUrl: state.uncroppedAdjustedPreviewUrl,
-      showOriginal: state.showOriginal,
       histogram: state.histogram,
       waveform: state.waveform,
       isWaveformVisible: state.isWaveformVisible,
@@ -404,7 +374,6 @@ function App() {
       originalSize: state.originalSize,
       overlayMode: state.overlayMode,
       overlayRotation: state.overlayRotation,
-      transformedOriginalUrl: state.transformedOriginalUrl,
       isStraightenActive: state.isStraightenActive,
       brushSettings: state.brushSettings,
       isGeneratingAiMask: state.isGeneratingAiMask,
@@ -1526,7 +1495,6 @@ function App() {
 
         setLibrary({ isViewLoading: false });
 
-        latestRenderedJobIdRef.current = previewJobIdRef.current;
         isBackendReadyRef.current = false;
         currentResRef.current = Infinity;
 
@@ -1945,124 +1913,23 @@ function App() {
     return list;
   }, [imageList, sortCriteria, imageRatings, filterCriteria, supportedTypes, searchCriteria, appSettings]);
 
-  const executeDelete = useCallback(
-    async (pathsToDelete: Array<string>, options = { includeAssociated: false }) => {
-      if (!pathsToDelete || pathsToDelete.length === 0) {
-        return;
-      }
-
-      const activePath = selectedImage ? selectedImage.path : libraryActivePath;
-      let nextImagePath: string | null = null;
-
-      if (activePath) {
-        const physicalPath = activePath.split('?vc=')[0];
-        const isActiveImageDeleted = pathsToDelete.some((p) => p === activePath || p === physicalPath);
-
-        if (isActiveImageDeleted) {
-          const currentIndex = sortedImageList.findIndex((img) => img.path === activePath);
-          if (currentIndex !== -1) {
-            const nextCandidate = sortedImageList
-              .slice(currentIndex + 1)
-              .find((img) => !pathsToDelete.includes(img.path));
-
-            if (nextCandidate) {
-              nextImagePath = nextCandidate.path;
-            } else {
-              const prevCandidate = sortedImageList
-                .slice(0, currentIndex)
-                .reverse()
-                .find((img) => !pathsToDelete.includes(img.path));
-
-              if (prevCandidate) {
-                nextImagePath = prevCandidate.path;
-              }
-            }
-          }
-        } else {
-          nextImagePath = activePath;
-        }
-      }
-
-      try {
-        const command = options.includeAssociated ? 'delete_files_with_associated' : 'delete_files_from_disk';
-        await invoke(command, { paths: pathsToDelete });
-
-        await refreshImageList();
-
-        if (selectedImage) {
-          const physicalPath = selectedImage.path.split('?vc=')[0];
-          const isFileBeingEditedDeleted = pathsToDelete.some((p) => p === selectedImage.path || p === physicalPath);
-
-          if (isFileBeingEditedDeleted) {
-            if (nextImagePath) {
-              handleImageSelect(nextImagePath);
-            } else {
-              handleBackToLibrary();
-            }
-          }
-        } else {
-          if (nextImagePath) {
-            setLibrary({ multiSelectedPaths: [nextImagePath], libraryActivePath: nextImagePath });
-          } else {
-            setLibrary({ multiSelectedPaths: [], libraryActivePath: null });
-          }
-        }
-      } catch (err) {
-        console.error('Failed to delete files:', err);
-        setError(`Failed to delete files: ${err}`);
-      }
-    },
-    [
-      refreshImageList,
-      selectedImage,
-      handleBackToLibrary,
-      libraryActivePath,
-      sortedImageList,
-      handleImageSelect,
-      setLibrary,
-    ],
+  const {
+    executeDelete,
+    handleDeleteSelected,
+    handleCreateFolder,
+    handleRenameFolder,
+    handleSaveRename,
+    handleStartImport,
+    startImportFiles,
+    handlePasteFiles,
+  } = useFileOperations(
+    setError,
+    refreshImageList,
+    refreshAllFolderTrees,
+    handleImageSelect,
+    handleBackToLibrary,
+    sortedImageList,
   );
-
-  const handleDeleteSelected = useCallback(() => {
-    const pathsToDelete = multiSelectedPaths;
-    if (pathsToDelete.length === 0) {
-      return;
-    }
-
-    const isSingle = pathsToDelete.length === 1;
-
-    const selectionHasVirtualCopies =
-      isSingle &&
-      !pathsToDelete[0].includes('?vc=') &&
-      imageList.some((image) => image.path.startsWith(`${pathsToDelete[0]}?vc=`));
-
-    let modalTitle = 'Confirm Delete';
-    let modalMessage = '';
-    let confirmText = 'Delete';
-
-    if (selectionHasVirtualCopies) {
-      modalTitle = 'Delete Image and All Virtual Copies?';
-      modalMessage = `Are you sure you want to permanently delete this image and all of its virtual copies? This action cannot be undone.`;
-      confirmText = 'Delete All';
-    } else if (isSingle) {
-      modalMessage = `Are you sure you want to permanently delete this image? This action cannot be undone. Right-click for more options (e.g., deleting associated files).`;
-      confirmText = 'Delete Selected Only';
-    } else {
-      modalMessage = `Are you sure you want to permanently delete these ${pathsToDelete.length} images? This action cannot be undone. Right-click for more options (e.g., deleting associated files).`;
-      confirmText = 'Delete Selected Only';
-    }
-
-    setUI({
-      confirmModalState: {
-        confirmText,
-        confirmVariant: 'destructive',
-        isOpen: true,
-        message: modalMessage,
-        onConfirm: () => executeDelete(pathsToDelete, { includeAssociated: false }),
-        title: modalTitle,
-      },
-    });
-  }, [multiSelectedPaths, executeDelete, imageList, setUI]);
 
   const handleToggleFullScreen = useCallback(() => {
     const currentlyZoomed = zoom > 1.01;
@@ -2392,29 +2259,6 @@ function App() {
     [setLibrary],
   );
 
-  const closeConfirmModal = () =>
-    setUI((state) => ({ confirmModalState: { ...state.confirmModalState, isOpen: false } }));
-
-  const handlePasteFiles = useCallback(
-    async (mode = 'copy') => {
-      if (copiedFilePaths.length === 0 || !currentFolderPath) {
-        return;
-      }
-      try {
-        if (mode === 'copy')
-          await invoke(Invokes.CopyFiles, { sourcePaths: copiedFilePaths, destinationFolder: currentFolderPath });
-        else {
-          await invoke(Invokes.MoveFiles, { sourcePaths: copiedFilePaths, destinationFolder: currentFolderPath });
-          setProcess({ copiedFilePaths: [] });
-        }
-        await refreshImageList();
-      } catch (err) {
-        setError(`Failed to ${mode} files: ${err}`);
-      }
-    },
-    [copiedFilePaths, currentFolderPath, refreshImageList, setProcess],
-  );
-
   const handleZoomChange = useCallback(
     (zoomValue: number, fitToWindow: boolean = false) => {
       const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
@@ -2468,18 +2312,20 @@ function App() {
     [originalSize, baseRenderSize, adjustments.orientationSteps, setEditor],
   );
 
-  const isAnyModalOpen =
-    isCreateFolderModalOpen ||
-    isRenameFolderModalOpen ||
-    isRenameFileModalOpen ||
-    isImportModalOpen ||
-    isCopyPasteSettingsModalOpen ||
-    confirmModalState.isOpen ||
-    panoramaModalState.isOpen ||
-    cullingModalState.isOpen ||
-    collageModalState.isOpen ||
-    denoiseModalState.isOpen ||
-    negativeModalState.isOpen;
+  const isAnyModalOpen = useUIStore(
+    (state) =>
+      state.isCreateFolderModalOpen ||
+      state.isRenameFolderModalOpen ||
+      state.isRenameFileModalOpen ||
+      state.isImportModalOpen ||
+      state.isCopyPasteSettingsModalOpen ||
+      state.confirmModalState.isOpen ||
+      state.panoramaModalState.isOpen ||
+      state.cullingModalState.isOpen ||
+      state.collageModalState.isOpen ||
+      state.denoiseModalState.isOpen ||
+      state.negativeModalState.isOpen,
+  );
 
   useKeyboardShortcuts({
     isModalOpen: isAnyModalOpen,
@@ -2919,85 +2765,6 @@ function App() {
     },
     [setUI],
   );
-
-  const handleSaveRename = useCallback(
-    async (nameTemplate: string) => {
-      if (renameTargetPaths.length > 0 && nameTemplate) {
-        try {
-          const newPaths: Array<string> = await invoke(Invokes.RenameFiles, {
-            nameTemplate,
-            paths: renameTargetPaths,
-          });
-
-          await refreshImageList();
-
-          if (selectedImage && renameTargetPaths.includes(selectedImage.path)) {
-            const oldPathIndex = renameTargetPaths.indexOf(selectedImage.path);
-
-            if (newPaths[oldPathIndex]) {
-              handleImageSelect(newPaths[oldPathIndex]);
-            } else {
-              handleBackToLibrary();
-            }
-          }
-
-          if (libraryActivePath && renameTargetPaths.includes(libraryActivePath)) {
-            const oldPathIndex = renameTargetPaths.indexOf(libraryActivePath);
-
-            if (newPaths[oldPathIndex]) {
-              setLibrary({ libraryActivePath: newPaths[oldPathIndex] });
-            } else {
-              setLibrary({ libraryActivePath: null });
-            }
-          }
-
-          setLibrary({ multiSelectedPaths: newPaths });
-        } catch (err) {
-          setError(`Failed to rename files: ${err}`);
-        }
-      }
-
-      setUI({ renameTargetPaths: [] });
-    },
-    [
-      renameTargetPaths,
-      refreshImageList,
-      selectedImage,
-      libraryActivePath,
-      handleImageSelect,
-      handleBackToLibrary,
-      setUI,
-      setLibrary,
-    ],
-  );
-
-  const startImportFiles = useCallback(
-    async (sourcePaths: string[], destinationFolder: string, settings: ImportSettings) => {
-      if (sourcePaths.length === 0 || !destinationFolder) {
-        return;
-      }
-
-      try {
-        await invoke(Invokes.ImportFiles, {
-          destinationFolder,
-          settings,
-          sourcePaths,
-        });
-      } catch (err) {
-        console.error('Failed to start import:', err);
-        setImportState({ status: Status.Error, errorMessage: `Failed to start import: ${err}` });
-      }
-    },
-    [setImportState],
-  );
-
-  const handleStartImport = async (settings: ImportSettings) => {
-    if (!importTargetFolder) {
-      return;
-    }
-
-    await startImportFiles(importSourcePaths, importTargetFolder, settings);
-  };
 
   const handleResetAdjustments = useCallback(
     (paths?: Array<string>) => {
@@ -3679,60 +3446,6 @@ function App() {
       deleteOption,
     ];
     showContextMenu(event.clientX, event.clientY, options);
-  };
-
-  const handleCreateFolder = async (folderName: string) => {
-    if (folderName && folderName.trim() !== '' && folderActionTarget) {
-      try {
-        await invoke(Invokes.CreateFolder, { path: `${folderActionTarget}/${folderName.trim()}` });
-        refreshAllFolderTrees();
-      } catch (err) {
-        setError(`Failed to create folder: ${err}`);
-      }
-    }
-  };
-
-  const handleRenameFolder = async (newName: string) => {
-    if (newName && newName.trim() !== '' && folderActionTarget) {
-      try {
-        const oldPath = folderActionTarget;
-        const trimmedNewName = newName.trim();
-
-        await invoke(Invokes.RenameFolder, { path: oldPath, newName: trimmedNewName });
-
-        const parentDir = getParentDir(oldPath);
-        const separator = oldPath.includes('/') ? '/' : '\\';
-        const newPath = parentDir ? `${parentDir}${separator}${trimmedNewName}` : trimmedNewName;
-
-        const newAppSettings = { ...appSettings } as AppSettings;
-        let settingsChanged = false;
-
-        if (rootPath === oldPath) {
-          setLibrary({ rootPath: newPath });
-          newAppSettings.lastRootPath = newPath;
-          settingsChanged = true;
-        }
-        if (currentFolderPath?.startsWith(oldPath)) {
-          const newCurrentPath = currentFolderPath.replace(oldPath, newPath);
-          setLibrary({ currentFolderPath: newCurrentPath });
-        }
-
-        const currentPins = appSettings?.pinnedFolders || [];
-        if (currentPins.includes(oldPath)) {
-          const newPins = currentPins.map((p) => (p === oldPath ? newPath : p)).sort((a, b) => a.localeCompare(b));
-          newAppSettings.pinnedFolders = newPins;
-          settingsChanged = true;
-        }
-
-        if (settingsChanged) {
-          handleSettingsChange(newAppSettings);
-        }
-
-        await refreshAllFolderTrees();
-      } catch (err) {
-        setError(`Failed to rename folder: ${err}`);
-      }
-    }
   };
 
   const handleFolderTreeContextMenu = (event: any, path: string, isCurrentlyPinned?: boolean) => {
@@ -4417,168 +4130,24 @@ function App() {
           </div>
         </div>
       </div>
-      <CopyPasteSettingsModal
-        isOpen={isCopyPasteSettingsModalOpen}
-        onClose={() => setUI({ isCopyPasteSettingsModalOpen: false })}
-        settings={appSettings?.copyPasteSettings as CopyPasteSettings}
-        onSave={(newSettings) =>
-          handleSettingsChange({ ...appSettings, copyPasteSettings: newSettings } as AppSettings)
-        }
-      />
-      <PanoramaModal
-        error={panoramaModalState.error}
-        finalImageBase64={panoramaModalState.finalImageBase64}
-        imageCount={panoramaModalState.stitchingSourcePaths.length}
-        isOpen={panoramaModalState.isOpen}
-        isProcessing={panoramaModalState.isProcessing}
-        loadingImageUrl={
-          panoramaModalState.stitchingSourcePaths.length > 0
-            ? thumbnails[
-                panoramaModalState.stitchingSourcePaths[Math.floor(panoramaModalState.stitchingSourcePaths.length / 2)]
-              ] || null
-            : null
-        }
-        onClose={() =>
-          setUI({
-            panoramaModalState: {
-              isOpen: false,
-              isProcessing: false,
-              progressMessage: '',
-              finalImageBase64: null,
-              error: null,
-              stitchingSourcePaths: [],
-            },
-          })
-        }
-        onOpenFile={(path: string) => handleImageSelect(path)}
-        onSave={handleSavePanorama}
-        onStitch={() => handleStartPanorama(panoramaModalState.stitchingSourcePaths)}
-        progressMessage={panoramaModalState.progressMessage}
-      />
-      <HdrModal
-        error={hdrModalState.error}
-        finalImageBase64={hdrModalState.finalImageBase64}
-        imageCount={hdrModalState.stitchingSourcePaths.length}
-        isOpen={hdrModalState.isOpen}
-        isProcessing={hdrModalState.isProcessing}
-        loadingImageUrl={
-          hdrModalState.stitchingSourcePaths.length > 0
-            ? thumbnails[
-                hdrModalState.stitchingSourcePaths[Math.floor(hdrModalState.stitchingSourcePaths.length / 2)]
-              ] || null
-            : null
-        }
-        onClose={() =>
-          setUI({
-            hdrModalState: {
-              isOpen: false,
-              isProcessing: false,
-              progressMessage: '',
-              finalImageBase64: null,
-              error: null,
-              stitchingSourcePaths: [],
-            },
-          })
-        }
-        onOpenFile={(path: string) => {
-          handleImageSelect(path);
-        }}
-        onSave={handleSaveHdr}
-        onMerge={() => handleStartHdr(hdrModalState.stitchingSourcePaths)}
-        progressMessage={hdrModalState.progressMessage}
-      />
-      <NegativeConversionModal
-        isOpen={negativeModalState.isOpen}
-        onClose={() => setUI((state) => ({ negativeModalState: { ...state.negativeModalState, isOpen: false } }))}
-        targetPaths={negativeModalState.targetPaths}
-        onSave={(savedPaths) => {
-          refreshImageList().then(() => {
-            if (selectedImage && negativeModalState.targetPaths.includes(selectedImage.path) && savedPaths.length > 0) {
-              handleImageSelect(savedPaths[0]);
-            }
-          });
-        }}
-      />
-      <DenoiseModal
-        isOpen={denoiseModalState.isOpen}
-        onClose={() => setUI((state) => ({ denoiseModalState: { ...state.denoiseModalState, isOpen: false } }))}
-        onDenoise={handleApplyDenoise}
-        onBatchDenoise={handleBatchDenoise}
-        onSave={handleSaveDenoisedImage}
-        onOpenFile={handleImageSelect}
-        previewBase64={denoiseModalState.previewBase64}
-        originalBase64={denoiseModalState.originalBase64 || null}
-        isProcessing={denoiseModalState.isProcessing}
-        error={denoiseModalState.error}
-        progressMessage={denoiseModalState.progressMessage}
-        aiModelDownloadStatus={aiModelDownloadStatus}
-        isRaw={denoiseModalState.isRaw}
-        targetPaths={denoiseModalState.targetPaths}
-        loadingImageUrl={
-          denoiseModalState.targetPaths.length > 0
-            ? thumbnails[denoiseModalState.targetPaths[0]] ||
-              (selectedImage?.path === denoiseModalState.targetPaths[0] ? finalPreviewUrl : null)
-            : null
-        }
-      />
-      <CreateFolderModal
-        isOpen={isCreateFolderModalOpen}
-        onClose={() => setUI({ isCreateFolderModalOpen: false })}
-        onSave={handleCreateFolder}
-      />
-      <RenameFolderModal
-        currentName={folderActionTarget ? folderActionTarget.split(/[\\/]/).pop() : ''}
-        isOpen={isRenameFolderModalOpen}
-        onClose={() => setUI({ isRenameFolderModalOpen: false })}
-        onSave={handleRenameFolder}
-      />
-      <RenameFileModal
-        filesToRename={renameTargetPaths}
-        isOpen={isRenameFileModalOpen}
-        onClose={() => setUI({ isRenameFileModalOpen: false })}
-        onSave={handleSaveRename}
-      />
-      <ConfirmModal {...confirmModalState} onClose={closeConfirmModal} />
-      <ImportSettingsModal
-        fileCount={importSourcePaths.length}
-        isOpen={isImportModalOpen}
-        onClose={() => setUI({ isImportModalOpen: false })}
-        onSave={handleStartImport}
-      />
-      <CullingModal
-        isOpen={cullingModalState.isOpen}
-        onClose={() =>
-          setUI({
-            cullingModalState: { isOpen: false, progress: null, suggestions: null, error: null, pathsToCull: [] },
-          })
-        }
-        progress={cullingModalState.progress}
-        suggestions={cullingModalState.suggestions}
-        error={cullingModalState.error}
-        imagePaths={cullingModalState.pathsToCull}
-        thumbnails={thumbnails}
-        onApply={(action, paths) => {
-          if (action === 'reject') {
-            handleSetColorLabel('red', paths);
-          } else if (action === 'rate_zero') {
-            handleRate(1, paths);
-          } else if (action === 'delete') {
-            executeDelete(paths, { includeAssociated: false });
-          }
-          setUI({
-            cullingModalState: { isOpen: false, progress: null, suggestions: null, error: null, pathsToCull: [] },
-          });
-        }}
-        onError={(err) => {
-          setUI((state) => ({ cullingModalState: { ...state.cullingModalState, error: err, progress: null } }));
-        }}
-      />
-      <CollageModal
-        isOpen={collageModalState.isOpen}
-        onClose={() => setUI({ collageModalState: { isOpen: false, sourceImages: [] } })}
-        onSave={handleSaveCollage}
-        sourceImages={collageModalState.sourceImages}
-        thumbnails={thumbnails}
+      <AppModals
+        handleImageSelect={handleImageSelect}
+        handleSavePanorama={handleSavePanorama}
+        handleStartPanorama={handleStartPanorama}
+        handleSaveHdr={handleSaveHdr}
+        handleStartHdr={handleStartHdr}
+        refreshImageList={refreshImageList}
+        handleApplyDenoise={handleApplyDenoise}
+        handleBatchDenoise={handleBatchDenoise}
+        handleSaveDenoisedImage={handleSaveDenoisedImage}
+        handleCreateFolder={handleCreateFolder}
+        handleRenameFolder={handleRenameFolder}
+        handleSaveRename={handleSaveRename}
+        handleStartImport={handleStartImport}
+        handleSetColorLabel={handleSetColorLabel}
+        handleRate={handleRate}
+        executeDelete={executeDelete}
+        handleSaveCollage={handleSaveCollage}
       />
       <ToastContainer
         position="bottom-right"

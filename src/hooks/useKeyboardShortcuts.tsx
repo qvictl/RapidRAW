@@ -131,23 +131,38 @@ export const useKeyboardShortcuts = ({
     const actions: Record<string, KeybindHandler> = {
       open_image: {
         shouldFire: () => !selectedImage && libraryActivePath !== null,
-        execute: (event) => { event.preventDefault(); handleImageSelect(libraryActivePath!); },
+        execute: (event) => {
+          event.preventDefault();
+          handleImageSelect(libraryActivePath!);
+        },
       },
       copy_adjustments: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handleCopyAdjustments(); },
+        execute: (event) => {
+          event.preventDefault();
+          handleCopyAdjustments();
+        },
       },
       paste_adjustments: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handlePasteAdjustments(); },
+        execute: (event) => {
+          event.preventDefault();
+          handlePasteAdjustments();
+        },
       },
       copy_files: {
         shouldFire: () => multiSelectedPaths.length > 0,
-        execute: (event) => { event.preventDefault(); setCopiedFilePaths(multiSelectedPaths); },
+        execute: (event) => {
+          event.preventDefault();
+          setCopiedFilePaths(multiSelectedPaths);
+        },
       },
       paste_files: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handlePasteFiles('copy'); },
+        execute: (event) => {
+          event.preventDefault();
+          handlePasteFiles('copy');
+        },
       },
       select_all: {
         shouldFire: () => sortedImageList.length > 0,
@@ -164,7 +179,10 @@ export const useKeyboardShortcuts = ({
           if (activeMaskContainerId || activeAiPatchContainerId) return false;
           return true;
         },
-        execute: (event) => { event.preventDefault(); handleDeleteSelected(); },
+        execute: (event) => {
+          event.preventDefault();
+          handleDeleteSelected();
+        },
       },
       preview_prev: {
         shouldFire: () => !!selectedImage,
@@ -222,7 +240,14 @@ export const useKeyboardShortcuts = ({
               ? Math.round(((displaySize.width * dpr) / originalSize.width) * 100)
               : 100;
           let fitPercent = 100;
-          if (originalSize && originalSize.width > 0 && originalSize.height > 0 && baseRenderSize && baseRenderSize.width > 0 && baseRenderSize.height > 0) {
+          if (
+            originalSize &&
+            originalSize.width > 0 &&
+            originalSize.height > 0 &&
+            baseRenderSize &&
+            baseRenderSize.width > 0 &&
+            baseRenderSize.height > 0
+          ) {
             const originalAspect = originalSize.width / originalSize.height;
             const baseAspect = baseRenderSize.width / baseRenderSize.height;
             if (originalAspect > baseAspect) {
@@ -267,67 +292,115 @@ export const useKeyboardShortcuts = ({
       },
       zoom_fit: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); handleZoomChange(0, true); },
+        execute: (event) => {
+          event.preventDefault();
+          handleZoomChange(0, true);
+        },
       },
       zoom_100: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); handleZoomChange(1.0); },
+        execute: (event) => {
+          event.preventDefault();
+          handleZoomChange(1.0);
+        },
       },
       rotate_left: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); handleRotate(-90); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRotate(-90);
+        },
       },
       rotate_right: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); handleRotate(90); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRotate(90);
+        },
       },
       undo: {
         shouldFire: () => !!selectedImage && canUndo,
-        execute: (event) => { event.preventDefault(); undo(); },
+        execute: (event) => {
+          event.preventDefault();
+          undo();
+        },
       },
       redo: {
         shouldFire: () => !!selectedImage && canRedo,
-        execute: (event) => { event.preventDefault(); redo(); },
+        execute: (event) => {
+          event.preventDefault();
+          redo();
+        },
       },
       toggle_fullscreen: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); handleToggleFullScreen(); },
+        execute: (event) => {
+          event.preventDefault();
+          handleToggleFullScreen();
+        },
       },
       show_original: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); setShowOriginal((prev: boolean) => !prev); },
+        execute: (event) => {
+          event.preventDefault();
+          setShowOriginal((prev: boolean) => !prev);
+        },
       },
       toggle_adjustments: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); handleRightPanelSelect(Panel.Adjustments); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRightPanelSelect(Panel.Adjustments);
+        },
       },
       toggle_crop_panel: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); handleRightPanelSelect(Panel.Crop); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRightPanelSelect(Panel.Crop);
+        },
       },
       toggle_masks: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); handleRightPanelSelect(Panel.Masks); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRightPanelSelect(Panel.Masks);
+        },
       },
       toggle_ai: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); handleRightPanelSelect(Panel.Ai); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRightPanelSelect(Panel.Ai);
+        },
       },
       toggle_presets: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); handleRightPanelSelect(Panel.Presets); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRightPanelSelect(Panel.Presets);
+        },
       },
       toggle_metadata: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); handleRightPanelSelect(Panel.Metadata); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRightPanelSelect(Panel.Metadata);
+        },
       },
       toggle_analytics: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); setIsWaveformVisible((prev: boolean) => !prev); },
+        execute: (event) => {
+          event.preventDefault();
+          setIsWaveformVisible((prev: boolean) => !prev);
+        },
       },
       toggle_export: {
         shouldFire: () => !!selectedImage,
-        execute: (event) => { event.preventDefault(); handleRightPanelSelect(Panel.Export); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRightPanelSelect(Panel.Export);
+        },
       },
       toggle_crop: {
         shouldFire: () => !!selectedImage,
@@ -343,51 +416,87 @@ export const useKeyboardShortcuts = ({
       },
       rate_0: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handleRate(0); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRate(0);
+        },
       },
       rate_1: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handleRate(1); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRate(1);
+        },
       },
       rate_2: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handleRate(2); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRate(2);
+        },
       },
       rate_3: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handleRate(3); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRate(3);
+        },
       },
       rate_4: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handleRate(4); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRate(4);
+        },
       },
       rate_5: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handleRate(5); },
+        execute: (event) => {
+          event.preventDefault();
+          handleRate(5);
+        },
       },
       color_label_none: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handleSetColorLabel(null); },
+        execute: (event) => {
+          event.preventDefault();
+          handleSetColorLabel(null);
+        },
       },
       color_label_red: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handleSetColorLabel('red'); },
+        execute: (event) => {
+          event.preventDefault();
+          handleSetColorLabel('red');
+        },
       },
       color_label_yellow: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handleSetColorLabel('yellow'); },
+        execute: (event) => {
+          event.preventDefault();
+          handleSetColorLabel('yellow');
+        },
       },
       color_label_green: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handleSetColorLabel('green'); },
+        execute: (event) => {
+          event.preventDefault();
+          handleSetColorLabel('green');
+        },
       },
       color_label_blue: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handleSetColorLabel('blue'); },
+        execute: (event) => {
+          event.preventDefault();
+          handleSetColorLabel('blue');
+        },
       },
       color_label_purple: {
         shouldFire: () => true,
-        execute: (event) => { event.preventDefault(); handleSetColorLabel('purple'); },
+        execute: (event) => {
+          event.preventDefault();
+          handleSetColorLabel('purple');
+        },
       },
       brush_size_up: {
         shouldFire: () => !!selectedImage && !!brushSettings && activeRightPanel === Panel.Masks,
@@ -430,8 +539,8 @@ export const useKeyboardShortcuts = ({
       },
       {
         match: (e) => {
-          if (osPlatform === 'macos') return e.code === 'Backspace';
-          return e.code === 'Delete';
+          const isDeleteKey = osPlatform === 'macos' ? e.code === 'Backspace' : e.code === 'Delete';
+          return isDeleteKey && (!!activeMaskContainerId || !!activeAiPatchContainerId);
         },
         execute: (e) => {
           e.preventDefault();
