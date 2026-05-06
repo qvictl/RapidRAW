@@ -106,6 +106,18 @@ export enum Invokes {
   GenerateAllCommunityPreviews = 'generate_all_community_previews',
   SaveCommunityPreset = 'save_community_preset',
   SaveTempFile = 'save_temp_file',
+
+  // RoamFS
+  RoamfsListConnections = 'roamfs_list_connections',
+  RoamfsAddConnection = 'roamfs_add_connection',
+  RoamfsRemoveConnection = 'roamfs_remove_connection',
+  RoamfsMount = 'roamfs_mount',
+  RoamfsUnmount = 'roamfs_unmount',
+  RoamfsStatus = 'roamfs_status',
+  RoamfsSyncNow = 'roamfs_sync_now',
+  RoamfsResolveConflict = 'roamfs_resolve_conflict',
+  RoamfsListConflicts = 'roamfs_list_conflicts',
+  RoamfsTestConnection = 'roamfs_test_connection',
 }
 
 export enum Panel {

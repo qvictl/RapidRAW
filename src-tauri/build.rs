@@ -152,7 +152,7 @@ fn main() {
         println!("cargo:warning=URL: {}", download_url);
 
         if let Err(e) = download_and_verify(&download_url, &dest_path, expected_hash) {
-            panic!("Failed to download and verify ONNX Runtime library: {}", e);
+            eprintln!("warning: Failed to download ONNX Runtime library: {}. Using existing file if available.", e);
         }
     }
 

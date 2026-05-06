@@ -1,4 +1,6 @@
-import { Folder, FolderOpen, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, X } from 'lucide-react';
+import { Folder, FolderOpen, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, X, Cloud, CloudOff, Plus, RefreshCw } from 'lucide-react';
+import { useRoamFs } from '../../hooks/useRoamFs';
+import { useUIStore } from '../../store/useUIStore';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo, useEffect } from 'react';
@@ -267,6 +269,9 @@ export default function FolderTree({
 }: FolderTreeProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isHovering, setIsHovering] = useState(false);
+  const { connections, isLoading: isRoamFsLoading, mountConnection, unmountConnection, syncConnection, refreshConnections } = useRoamFs();
+  const setUI = useUIStore((state) => state.setUI);
+  const isRemotesOpen = activeSection === 'remotes';
 
   const handleEmptyAreaContextMenu = (e: any) => {
     if (e.target === e.currentTarget) {
@@ -465,6 +470,104 @@ export default function FolderTree({
                 </AnimatePresence>
               </>
             )}
+
+            <div className="mt-2">
+              <SectionHeader
+                title="Remotes"
+                isOpen={isRemotesOpen}
+                onToggle={() => onActiveSectionChange(isRemotesOpen ? null : 'remotes')}
+              />
+            </div>
+            <AnimatePresence initial={false}>
+              {isRemotesOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2, ease: 'easeInOut' }}
+                  className="overflow-hidden"
+                >
+                  <div className="pt-1 pb-2 space-y-1">
+                    {connections.map((conn) => (
+                      <div
+                        key={conn.id}
+                        className={clsx(
+                          'flex items-center gap-2 p-1.5 rounded-md transition-colors cursor-pointer',
+                          selectedPath === conn.localPath ? 'bg-surface' : 'hover:bg-card-active'
+                        )}
+                      >
+                        <div className="p-0.5 rounded-sm text-text-secondary">
+                          {conn.isMounted ? <Cloud size={16} /> : <CloudOff size={16} />}
+                        </div>
+                        <span
+                          className="truncate select-none flex-1 text-sm"
+                          onClick={() => {
+                            if (conn.isMounted && conn.localPath) {
+                              onFolderSelect(conn.localPath);
+                            }
+                          }}
+                        >
+                          {conn.name}
+                        </span>
+                        <div className="flex gap-1">
+                          {conn.isMounted ? (
+                            <>
+                              <button
+                                className="p-1 rounded-sm hover:bg-surface/50 text-text-secondary"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  syncConnection(conn.id);
+                                }}
+                                data-tooltip="Sync now"
+                              >
+                                <RefreshCw size={14} />
+                              </button>
+                              <button
+                                className="p-1 rounded-sm hover:bg-surface/50 text-text-secondary"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  unmountConnection(conn.id);
+                                }}
+                                data-tooltip="Unmount"
+                              >
+                                <CloudOff size={14} />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              className="p-1 rounded-sm hover:bg-surface/50 text-text-secondary"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                mountConnection(conn.id).then((path) => {
+                                  if (path) onFolderSelect(path);
+                                });
+                              }}
+                              data-tooltip="Mount"
+                            >
+                              <Cloud size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {connections.length === 0 && !isRoamFsLoading && (
+                      <Text variant={TextVariants.small} className="p-2 text-text-secondary">
+                        No remote connections.
+                      </Text>
+                    )}
+                    <button
+                      className="flex items-center gap-2 w-full p-1.5 rounded-md hover:bg-card-active transition-colors text-text-secondary text-sm"
+                      onClick={() =>
+                        setUI({ remoteConnectionModalState: { isOpen: true, connection: null } })
+                      }
+                    >
+                      <Plus size={16} />
+                      <span>Add Remote</span>
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {!filteredTree && !hasVisiblePinnedTrees && isSearching && (
               <Text className="p-2 text-center">No folders found.</Text>

@@ -28,6 +28,7 @@ use crate::AppState;
 #[cfg(target_os = "android")]
 use crate::android_integration::*;
 use crate::app_settings::*;
+use crate::roamfs_integration::{RoamDirEntry, RoamFsManager};
 use crate::cache_utils::calculate_geometry_hash;
 use crate::exif_processing;
 use crate::formats::{is_raw_file, is_supported_image_file};
@@ -251,19 +252,31 @@ pub async fn update_exif_fields(
 
 #[tauri::command]
 pub fn list_images_in_dir(path: String, app_handle: AppHandle) -> Result<Vec<ImageFile>, String> {
-    let settings = load_settings(app_handle).unwrap_or_default();
+    let settings = load_settings(app_handle.clone()).unwrap_or_default();
     let enable_xmp_sync = settings.enable_xmp_sync.unwrap_or(false);
 
-    let entries = fs::read_dir(&path).map_err(|e| e.to_string())?;
+    let roamfs = app_handle.state::<RoamFsManager>();
+    let entries: Vec<RoamDirEntry> = match roamfs.read_dir_sync(Path::new(&path)) {
+        Ok(Some(entries)) => entries,
+        _ => fs::read_dir(&path)
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .map(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                let path = e.path();
+                let is_dir = e.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+                let is_file = e.file_type().map(|ft| ft.is_file()).unwrap_or(false);
+                RoamDirEntry { name, path, is_dir, is_file }
+            })
+            .collect(),
+    };
+
     let mut images = Vec::new();
     let mut sidecars_by_filename: HashMap<String, Vec<Option<String>>> = HashMap::new();
 
-    for entry in entries.filter_map(Result::ok) {
-        let entry_path = entry.path();
-        let file_name = entry
-            .file_name()
-            .into_string()
-            .unwrap_or_else(|os| os.to_string_lossy().into_owned());
+    for entry in entries {
+        let entry_path = entry.path;
+        let file_name = entry.name;
 
         if file_name.ends_with(".rrdata") {
             let base = &file_name[..file_name.len() - 7];
@@ -371,42 +384,51 @@ pub fn list_images_recursive(
     path: String,
     app_handle: AppHandle,
 ) -> Result<Vec<ImageFile>, String> {
-    let settings = load_settings(app_handle).unwrap_or_default();
+    let settings = load_settings(app_handle.clone()).unwrap_or_default();
     let enable_xmp_sync = settings.enable_xmp_sync.unwrap_or(false);
 
     let root_path = Path::new(&path);
     let mut images = Vec::new();
-
     let mut sidecars_by_path: HashMap<PathBuf, Vec<Option<String>>> = HashMap::new();
 
-    for entry in WalkDir::new(root_path).into_iter().filter_map(Result::ok) {
-        let entry_path = entry.path();
-        if !entry_path.is_file() {
-            continue;
-        }
+    let roamfs = app_handle.state::<RoamFsManager>();
+    if roamfs.find_mount_by_local_path(root_path).is_some() {
+        collect_images_recursive_remote(&roamfs,
+            root_path,
+            &mut images,
+            &mut sidecars_by_path,
+        )
+        .map_err(|e| e.to_string())?;
+    } else {
+        for entry in WalkDir::new(root_path).into_iter().filter_map(Result::ok) {
+            let entry_path = entry.path();
+            if !entry_path.is_file() {
+                continue;
+            }
 
-        let file_name = entry_path.file_name().unwrap_or_default().to_string_lossy();
-        if let Some(base) = file_name.strip_suffix(".rrdata") {
-            let (source_filename, copy_id) =
-                if base.len() >= 7 && base.as_bytes()[base.len() - 7] == b'.' {
-                    let id = &base[base.len() - 6..];
-                    if id.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')) {
-                        (&base[..base.len() - 7], Some(id.to_string()))
+            let file_name = entry_path.file_name().unwrap_or_default().to_string_lossy();
+            if let Some(base) = file_name.strip_suffix(".rrdata") {
+                let (source_filename, copy_id) =
+                    if base.len() >= 7 && base.as_bytes()[base.len() - 7] == b'.' {
+                        let id = &base[base.len() - 6..];
+                        if id.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')) {
+                            (&base[..base.len() - 7], Some(id.to_string()))
+                        } else {
+                            (base, None)
+                        }
                     } else {
                         (base, None)
-                    }
-                } else {
-                    (base, None)
-                };
+                    };
 
-            if let Some(parent) = entry_path.parent() {
-                sidecars_by_path
-                    .entry(parent.join(source_filename))
-                    .or_default()
-                    .push(copy_id);
+                if let Some(parent) = entry_path.parent() {
+                    sidecars_by_path
+                        .entry(parent.join(source_filename))
+                        .or_default()
+                        .push(copy_id);
+                }
+            } else if is_supported_image_file(entry_path.to_string_lossy().as_ref()) {
+                images.push(entry_path.to_path_buf());
             }
-        } else if is_supported_image_file(entry_path.to_string_lossy().as_ref()) {
-            images.push(entry_path.to_path_buf());
         }
     }
 
@@ -524,33 +546,41 @@ fn scan_dir_lazy(
     expanded_folders: &HashSet<&str>,
     show_image_counts: bool,
     prefetch_one_level: bool,
+    app_handle: &AppHandle,
 ) -> Result<(Vec<FolderNode>, usize), std::io::Error> {
     let mut children_folders = Vec::new();
     let mut current_dir_image_count = 0;
 
-    let entries = match std::fs::read_dir(path) {
-        Ok(entries) => entries,
-        Err(e) => {
-            log::warn!("Could not scan directory '{}': {}", path.display(), e);
-            return Ok((Vec::new(), 0));
-        }
+    let roamfs = app_handle.state::<RoamFsManager>();
+    let entries: Vec<RoamDirEntry> = match roamfs.read_dir_sync(path) {
+        Ok(Some(entries)) => entries,
+        _ => match std::fs::read_dir(path) {
+            Ok(entries) => entries
+                .filter_map(Result::ok)
+                .map(|e| {
+                    let name = e.file_name().to_string_lossy().into_owned();
+                    let path = e.path();
+                    let is_dir = e.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+                    let is_file = e.file_type().map(|ft| ft.is_file()).unwrap_or(false);
+                    RoamDirEntry { name, path, is_dir, is_file }
+                })
+                .collect(),
+            Err(e) => {
+                log::warn!("Could not scan directory '{}': {}", path.display(), e);
+                return Ok((Vec::new(), 0));
+            }
+        },
     };
 
-    for entry in entries.filter_map(Result::ok) {
-        let current_path = entry.path();
-        let file_type = match entry.file_type() {
-            Ok(ft) => ft,
-            Err(_) => continue,
-        };
-
-        let file_name = entry.file_name();
-        let name_str = file_name.to_string_lossy();
+    for entry in entries {
+        let current_path = entry.path;
+        let name_str = entry.name;
 
         if name_str.starts_with('.') {
             continue;
         }
 
-        if file_type.is_dir() {
+        if entry.is_dir {
             let path_str = current_path.to_string_lossy().into_owned();
             let is_expanded = expanded_folders.contains(path_str.as_str());
 
@@ -563,17 +593,24 @@ fn scan_dir_lazy(
                     expanded_folders,
                     show_image_counts,
                     next_prefetch,
-                )?
+                    app_handle,
+                )
+                .unwrap_or((Vec::new(), 0))
             } else {
                 let count = if show_image_counts {
-                    WalkDir::new(&current_path)
-                        .into_iter()
-                        .filter_map(Result::ok)
-                        .filter(|e| {
-                            e.file_type().is_file()
-                                && crate::formats::is_supported_image_file(e.path())
-                        })
-                        .count()
+                    // For roamfs paths, use the remote-aware walk; otherwise WalkDir.
+                    if roamfs.find_mount_by_local_path(&current_path).is_some() {
+                        count_images_recursive_remote(&roamfs, &current_path).unwrap_or(0)
+                    } else {
+                        WalkDir::new(&current_path)
+                            .into_iter()
+                            .filter_map(Result::ok)
+                            .filter(|e| {
+                                e.file_type().is_file()
+                                    && crate::formats::is_supported_image_file(e.path())
+                            })
+                            .count()
+                    }
                 } else {
                     0
                 };
@@ -583,14 +620,18 @@ fn scan_dir_lazy(
             let has_any_subdirs = if should_scan {
                 grand_children.iter().any(|c| c.is_dir)
             } else {
-                has_subdirs(&current_path)
+                if roamfs.find_mount_by_local_path(&current_path).is_some() {
+                    has_subdirs_remote(&roamfs, &current_path).unwrap_or(false)
+                } else {
+                    has_subdirs(&current_path)
+                }
             };
 
             let grand_children_sum: usize = grand_children.iter().map(|c| c.image_count).sum();
             let total_child_count = sub_dir_own_images + grand_children_sum;
 
             children_folders.push(FolderNode {
-                name: name_str.into_owned(),
+                name: name_str,
                 path: path_str,
                 children: grand_children,
                 is_dir: true,
@@ -598,7 +639,7 @@ fn scan_dir_lazy(
                 has_subdirs: has_any_subdirs,
             });
         } else if show_image_counts
-            && file_type.is_file()
+            && entry.is_file
             && crate::formats::is_supported_image_file(&current_path)
         {
             current_dir_image_count += 1;
@@ -610,10 +651,79 @@ fn scan_dir_lazy(
     Ok((children_folders, current_dir_image_count))
 }
 
+/// Count images recursively using the remote-aware reader.
+fn count_images_recursive_remote(
+    roamfs: &RoamFsManager,
+    path: &Path,
+) -> Result<usize, String> {
+    let entries = roamfs.read_dir_sync(path)?.unwrap_or_default();
+    let mut count = 0;
+    for entry in entries {
+        if entry.name.starts_with('.') {
+            continue;
+        }
+        if entry.is_dir {
+            count += count_images_recursive_remote(roamfs, &entry.path)?;
+        } else if entry.is_file && crate::formats::is_supported_image_file(&entry.path) {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+/// Check whether a directory has any subdirectories using the remote-aware reader.
+fn has_subdirs_remote(roamfs: &RoamFsManager, path: &Path) -> Result<bool, String> {
+    let entries = roamfs.read_dir_sync(path)?.unwrap_or_default();
+    Ok(entries.iter().any(|e| e.is_dir && !e.name.starts_with('.')))
+}
+
+/// Recursively collect images and sidecars from a roamfs-managed path.
+fn collect_images_recursive_remote(
+    roamfs: &RoamFsManager,
+    path: &Path,
+    images: &mut Vec<PathBuf>,
+    sidecars_by_path: &mut HashMap<PathBuf, Vec<Option<String>>>,
+) -> Result<(), String> {
+    let entries = roamfs.read_dir_sync(path)?.unwrap_or_default();
+    for entry in entries {
+        if entry.name.starts_with('.') {
+            continue;
+        }
+        if entry.is_dir {
+            collect_images_recursive_remote(roamfs, &entry.path, images, sidecars_by_path)?;
+        } else if entry.is_file {
+            let file_name = &entry.name;
+            if let Some(base) = file_name.strip_suffix(".rrdata") {
+                let (source_filename, copy_id) =
+                    if base.len() >= 7 && base.as_bytes()[base.len() - 7] == b'.' {
+                        let id = &base[base.len() - 6..];
+                        if id.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')) {
+                            (&base[..base.len() - 7], Some(id.to_string()))
+                        } else {
+                            (base, None)
+                        }
+                    } else {
+                        (base, None)
+                    };
+                if let Some(parent) = entry.path.parent() {
+                    sidecars_by_path
+                        .entry(parent.join(source_filename))
+                        .or_default()
+                        .push(copy_id);
+                }
+            } else if is_supported_image_file(file_name) {
+                images.push(entry.path.clone());
+            }
+        }
+    }
+    Ok(())
+}
+
 fn get_folder_tree_sync(
     path: String,
     expanded_folders: Vec<String>,
     show_image_counts: bool,
+    app_handle: &AppHandle,
 ) -> Result<FolderNode, String> {
     let root_path = Path::new(&path);
     if !root_path.is_dir() {
@@ -622,7 +732,7 @@ fn get_folder_tree_sync(
 
     let expanded_set: HashSet<&str> = expanded_folders.iter().map(|s| s.as_str()).collect();
 
-    let (children, own_count) = scan_dir_lazy(root_path, &expanded_set, show_image_counts, true)
+    let (children, own_count) = scan_dir_lazy(root_path, &expanded_set, show_image_counts, true, app_handle)
         .map_err(|e| e.to_string())?;
 
     let children_sum: usize = children.iter().map(|c| c.image_count).sum();
@@ -646,6 +756,7 @@ fn get_folder_tree_sync(
 pub async fn get_folder_children(
     path: String,
     show_image_counts: bool,
+    app_handle: AppHandle,
 ) -> Result<Vec<FolderNode>, String> {
     match tauri::async_runtime::spawn_blocking(move || {
         let root_path = Path::new(&path);
@@ -653,7 +764,7 @@ pub async fn get_folder_children(
             return Err(format!("Directory does not exist: {}", path));
         }
         let empty_set = HashSet::new();
-        let (children, _) = scan_dir_lazy(root_path, &empty_set, show_image_counts, false)
+        let (children, _) = scan_dir_lazy(root_path, &empty_set, show_image_counts, false, &app_handle)
             .map_err(|e| e.to_string())?;
 
         Ok(children)
@@ -671,9 +782,10 @@ pub async fn get_folder_tree(
     path: String,
     expanded_folders: Vec<String>,
     show_image_counts: bool,
+    app_handle: AppHandle,
 ) -> Result<FolderNode, String> {
     match tauri::async_runtime::spawn_blocking(move || {
-        get_folder_tree_sync(path, expanded_folders, show_image_counts)
+        get_folder_tree_sync(path, expanded_folders, show_image_counts, &app_handle)
     })
     .await
     {
@@ -688,12 +800,13 @@ pub async fn get_pinned_folder_trees(
     paths: Vec<String>,
     expanded_folders: Vec<String>,
     show_image_counts: bool,
+    app_handle: AppHandle,
 ) -> Result<Vec<FolderNode>, String> {
     let result = tauri::async_runtime::spawn_blocking(move || {
         let results: Vec<Result<FolderNode, String>> = paths
             .par_iter()
             .map(|path| {
-                get_folder_tree_sync(path.clone(), expanded_folders.clone(), show_image_counts)
+                get_folder_tree_sync(path.clone(), expanded_folders.clone(), show_image_counts, &app_handle)
             })
             .collect();
 

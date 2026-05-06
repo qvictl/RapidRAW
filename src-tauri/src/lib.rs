@@ -32,6 +32,7 @@ mod preset_converter;
 mod raw_processing;
 mod tagging;
 mod tagging_utils;
+mod roamfs_integration;
 mod window_customizer;
 
 use std::collections::{HashMap, hash_map::DefaultHasher};
@@ -67,7 +68,7 @@ use tauri::{Emitter, Manager, ipc::Response};
 use tempfile::NamedTempFile;
 use tokio::sync::Mutex as TokioMutex;
 
-use crate::cache_utils::{
+pub use crate::cache_utils::{
     DecodedImageCache, GEOMETRY_KEYS, calculate_full_job_hash, calculate_geometry_hash,
     calculate_transform_hash, calculate_visual_hash,
 };
@@ -77,13 +78,17 @@ use crate::formats::is_raw_file;
 use crate::image_loader::{
     composite_patches_on_image, load_and_composite, load_base_image_from_bytes,
 };
-use crate::image_processing::{
-    Crop, GeometryParams, RenderRequest, apply_coarse_rotation, apply_cpu_default_raw_processing,
+pub use crate::gpu_processing::{
+    process_and_get_dynamic_image_inner, RenderRequest,
+};
+pub use crate::image_processing::{
+    Crop, GeometryParams, GpuContext, apply_coarse_rotation, apply_cpu_default_raw_processing,
     apply_flip, apply_geometry_warp, apply_linear_to_srgb, apply_srgb_to_linear,
     downscale_f32_image, get_all_adjustments_from_json, get_or_init_gpu_context,
     process_and_get_dynamic_image, resolve_tonemapper_override,
     resolve_tonemapper_override_from_handle, warp_image_geometry,
 };
+pub use crate::raw_processing::develop_raw_image;
 use crate::lut_processing::Lut;
 use crate::mask_generation::{
     MaskDefinition, generate_mask_bitmap, get_cached_or_generate_mask,
@@ -2195,6 +2200,10 @@ pub fn run() {
                 });
             }
 
+            let roamfs_manager = roamfs_integration::RoamFsManager::new(app.handle())
+                .map_err(|e| format!("failed to init roamfs manager: {}", e))?;
+            app.manage(roamfs_manager);
+
             crate::register_exit_handler();
             Ok(())
         })
@@ -2324,6 +2333,16 @@ pub fn run() {
             lens_correction::get_lens_distortion_params,
             negative_conversion::preview_negative_conversion,
             negative_conversion::convert_negatives,
+            roamfs_integration::roamfs_list_connections,
+            roamfs_integration::roamfs_add_connection,
+            roamfs_integration::roamfs_remove_connection,
+            roamfs_integration::roamfs_mount,
+            roamfs_integration::roamfs_unmount,
+            roamfs_integration::roamfs_status,
+            roamfs_integration::roamfs_sync_now,
+            roamfs_integration::roamfs_resolve_conflict,
+            roamfs_integration::roamfs_list_conflicts,
+            roamfs_integration::roamfs_test_connection,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

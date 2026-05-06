@@ -15,8 +15,11 @@ import ConfirmModal from './ConfirmModal';
 import ImportSettingsModal from './ImportSettingsModal';
 import CullingModal from './CullingModal';
 import CollageModal from './CollageModal';
+import RemoteConnectionModal from './RemoteConnectionModal';
+import ConflictResolutionModal from './ConflictResolutionModal';
 import { AppSettings } from '../ui/AppProperties';
 import { CopyPasteSettings } from '../../utils/adjustments';
+import { useRoamFs } from '../../hooks/useRoamFs';
 
 export interface AppModalsProps {
   handleImageSelect: (path: string) => void;
@@ -62,6 +65,8 @@ export default function AppModals(props: AppModalsProps) {
     denoiseModalState,
     cullingModalState,
     collageModalState,
+    remoteConnectionModalState,
+    conflictResolutionModalState,
     setUI,
   } = useUIStore(
     useShallow((state) => ({
@@ -80,6 +85,8 @@ export default function AppModals(props: AppModalsProps) {
       denoiseModalState: state.denoiseModalState,
       cullingModalState: state.cullingModalState,
       collageModalState: state.collageModalState,
+      remoteConnectionModalState: state.remoteConnectionModalState,
+      conflictResolutionModalState: state.conflictResolutionModalState,
       setUI: state.setUI,
     })),
   );
@@ -101,6 +108,8 @@ export default function AppModals(props: AppModalsProps) {
   const closeConfirmModal = () => {
     setUI((state) => ({ confirmModalState: { ...state.confirmModalState, isOpen: false } }));
   };
+
+  const { addConnection, refreshConnections } = useRoamFs();
 
   return (
     <>
@@ -264,6 +273,28 @@ export default function AppModals(props: AppModalsProps) {
         onSave={props.handleSaveCollage}
         sourceImages={collageModalState.sourceImages}
         thumbnails={thumbnails}
+      />
+      <RemoteConnectionModal
+        isOpen={remoteConnectionModalState.isOpen}
+        onClose={() =>
+          setUI({ remoteConnectionModalState: { isOpen: false, connection: null } })
+        }
+        connection={remoteConnectionModalState.connection}
+        onSave={async (conn) => {
+          await addConnection(conn);
+          setUI({ remoteConnectionModalState: { isOpen: false, connection: null } });
+        }}
+      />
+      <ConflictResolutionModal
+        isOpen={conflictResolutionModalState.isOpen}
+        onClose={() =>
+          setUI({ conflictResolutionModalState: { isOpen: false, connectionId: '', conflicts: [] } })
+        }
+        connectionId={conflictResolutionModalState.connectionId}
+        conflicts={conflictResolutionModalState.conflicts}
+        onResolved={() => {
+          refreshConnections();
+        }}
       />
     </>
   );

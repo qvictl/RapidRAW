@@ -65,6 +65,25 @@ export interface CullingModalState {
   pathsToCull: Array<string>;
 }
 
+export interface RemoteConnection {
+  id: string;
+  name: string;
+  uri: string;
+  cacheDir: string;
+  maxCacheMib: number;
+}
+
+export interface RemoteConnectionModalState {
+  isOpen: boolean;
+  connection: RemoteConnection | null;
+}
+
+export interface ConflictResolutionModalState {
+  isOpen: boolean;
+  connectionId: string;
+  conflicts: string[];
+}
+
 interface UIState {
   // View & Layout
   activeView: string;
@@ -106,6 +125,8 @@ interface UIState {
   denoiseModalState: DenoiseModalState;
   cullingModalState: CullingModalState;
   collageModalState: CollageModalState;
+  remoteConnectionModalState: RemoteConnectionModalState;
+  conflictResolutionModalState: ConflictResolutionModalState;
 
   // Actions
   setUI: (updater: Partial<UIState> | ((state: UIState) => Partial<UIState>)) => void;
@@ -170,6 +191,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   },
   cullingModalState: { isOpen: false, suggestions: null, progress: null, error: null, pathsToCull: [] },
   collageModalState: { isOpen: false, sourceImages: [] },
+  remoteConnectionModalState: { isOpen: false, connection: null },
+  conflictResolutionModalState: { isOpen: false, connectionId: '', conflicts: [] },
 
   setUI: (updater) => set((state) => (typeof updater === 'function' ? updater(state) : updater)),
 

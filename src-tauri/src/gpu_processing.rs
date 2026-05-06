@@ -1612,9 +1612,9 @@ pub fn process_and_get_dynamic_image_with_analytics(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn process_and_get_dynamic_image_inner(
+pub fn process_and_get_dynamic_image_inner(
     context: &GpuContext,
-    state: &tauri::State<AppState>,
+    state: &AppState,
     base_image: &DynamicImage,
     transform_hash: u64,
     request: RenderRequest,
